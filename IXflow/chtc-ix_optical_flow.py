@@ -8,6 +8,7 @@ import glob
 from pathlib import Path
 import imageio
 from PIL import Image
+from matplotlib import cm
 from skimage.filters import threshold_otsu
 from skimage.transform import rescale
 from skimage import filters
@@ -52,6 +53,8 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                                 str(frame), name + "_" + well + ".TIF")
             well_paths.append(path)
 
+        counter = 0
+
         # read the TIFFs at the end of each path into a np array; perform
         # various operations on the array
         try:
@@ -68,7 +71,6 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
 
             # initialize an empty array with the correct shape of the final array
             well_array = np.zeros((frames, height, width))
-            counter = 0
 
             # read images from well_paths
             print("Reading images for well {}".format(well))
@@ -97,20 +99,20 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # segment the worms
-            normalization_factor, sobel, blur, bin = segment_worms(
-                well,
-                well_array,
-                input,
-                output,
-                work)
+            # normalization_factor, sobel, blur, bin = segment_worms(
+            #     well,
+            #     well_array,
+            #     input,
+            #     output,
+            #     work)
 
             # wrap_up
-            wrap_up(
-                well,
-                total_sum,
-                normalization_factor,
-                input,
-                output)
+            # wrap_up(
+            #     well,
+            #     total_sum,
+            #     normalization_factor,
+            #     input,
+            #     output)
 
             # add to the dict with the well as the key and the array as the value
             # vid_dict[well] = well_array
@@ -157,7 +159,8 @@ def dense_flow(well, well_array, input, output, work):
             flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3,
                                                 15, 3, 5, 1.2, 0)
 
-            mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            # mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            mag = np.sqrt(np.square(flow[..., 0]) + np.square(flow[..., 1]))
 
             frame1 = frame2
 
@@ -173,15 +176,21 @@ def dense_flow(well, well_array, input, output, work):
     total_sum = np.sum(sum_img)
 
     # write out the dx flow image
+    if np.amax(sum_img) < 255:
+        sum_img[0, 0] = 255
+    elif np.amax(sum_img) > 255:
+        sum_img[sum_img > 255] = 255
+    # apply a colomap
+    sum_img = sum_img / 255
+    im = Image.fromarray(np.uint8(cm.inferno(sum_img)*255))
+
     dir = Path.home().joinpath(work)
     plate_name = Path.home().joinpath(input)
     plate_name = plate_name.name.split("_")[0]
     dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
     outpath = dir.joinpath(well, 'img', plate_name + "_" + well + '_flow' + ".png")
-
-    # write to png
     print(str(outpath))
-    imageio.imwrite(str(outpath), sum_img)
+    imageio.imwrite(str(outpath), im)
 
     print("Optical flow anlaysis completed. Analysis took {}".format(
         datetime.now() - start_time))
@@ -368,9 +377,9 @@ if __name__ == "__main__":
         args.columns,
         args.reorganize)
 
-    thumbnails(
-        args.rows,
-        args.columns,
-        args.input_directory,
-        args.output_directory,
-        args.work_directory)
+    # thumbnails(
+    #     args.rows,
+    #     args.columns,
+    #     args.input_directory,
+    #     args.output_directory,
+    #     args.work_directory)
