@@ -99,20 +99,20 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # segment the worms
-            # normalization_factor, sobel, blur, bin = segment_worms(
-            #     well,
-            #     well_array,
-            #     input,
-            #     output,
-            #     work)
+            normalization_factor, sobel, blur, bin = segment_worms(
+                well,
+                well_array,
+                input,
+                output,
+                work)
 
             # wrap_up
-            # wrap_up(
-            #     well,
-            #     total_sum,
-            #     normalization_factor,
-            #     input,
-            #     output)
+            wrap_up(
+                well,
+                total_sum,
+                normalization_factor,
+                input,
+                output)
 
             # add to the dict with the well as the key and the array as the value
             # vid_dict[well] = well_array
@@ -377,9 +377,9 @@ if __name__ == "__main__":
         args.columns,
         args.reorganize)
 
-    # thumbnails(
-    #     args.rows,
-    #     args.columns,
-    #     args.input_directory,
-    #     args.output_directory,
-    #     args.work_directory)
+    thumbnails(
+        args.rows,
+        args.columns,
+        args.input_directory,
+        args.output_directory,
+        args.work_directory)
