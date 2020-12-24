@@ -62,7 +62,8 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
             plate_name = Path.home().joinpath(input)
             plate_name = plate_name.name.split("_")[0]
             dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
-            outpath = dir.joinpath(well, 'img', plate_name + "_" + well + '_orig' + ".png")
+            outpath = dir.joinpath(
+                well, 'img', plate_name + "_" + well + '_orig' + ".png")
             imageio.imwrite(str(outpath), first_frame)
 
             height, width = np.array(first_frame).shape
@@ -83,8 +84,10 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                     dir = Path.home().joinpath(work)
                     plate_name = Path.home().joinpath(input)
                     plate_name = plate_name.name.split("_")[0]
-                    dir.joinpath(well, 'vid').mkdir(parents=True, exist_ok=True)
-                    outpath = dir.joinpath(well, 'vid', plate_name + "_" + well + "_" + counter_str + ".tiff")
+                    dir.joinpath(well, 'vid').mkdir(
+                        parents=True, exist_ok=True)
+                    outpath = dir.joinpath(
+                        well, 'vid', plate_name + "_" + well + "_" + counter_str + ".tiff")
                     cv2.imwrite(str(outpath), matrix)
 
                 counter += 1
@@ -156,9 +159,10 @@ def dense_flow(well, well_array, input, output, work):
             frame2 = array[count + 1].astype('uint16')
 
             flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3,
-                                                15, 3, 5, 1.2, 0)
+                                                30, 3, 5, 1.1, 0)
 
-            mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            # mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            mag = np.sqrt(np.square(flow[..., 0]) + np.square(flow[..., 1]))
 
             frame1 = frame2
 
@@ -178,16 +182,24 @@ def dense_flow(well, well_array, input, output, work):
     plate_name = Path.home().joinpath(input)
     plate_name = plate_name.name.split("_")[0]
     dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
-    outpath = dir.joinpath(well, 'img', plate_name + "_" + well + '_flow' + ".png")
+    outpath = dir.joinpath(well, 'img', plate_name +
+                           "_" + well + '_flow' + ".png")
 
     # write to png
-    print(str(outpath))
-    imageio.imwrite(str(outpath), sum_img)
+    # if there is not a single saturated pixel (low flow), set one to 255 in order to prevent rescaling
+    pixel_max = np.amax(sum_img)
+    if pixel_max < 255:
+        print("Max flow is {}. Rescaling".format(pixel_max))
+        sum_img[0, 0] = 255
+    # if there are saturated pixels (high flow), adjust everything > 255 to prevent rescaling
+    elif pixel_max > 255:
+        print("Max flow is {}. Rescaling".format(pixel_max))
+        sum_img[sum_img > 255] = 255
+    sum_blur = ndimage.filters.gaussian_filter(sum_img, 1.5)
+    imageio.imwrite(str(outpath), sum_blur.astype('uint8'))
 
-    print("Optical flow anlaysis completed. Analysis took {}".format(
-        datetime.now() - start_time))
-
-    print(total_sum)
+    print("Optical flow = {0}. Analysis took {1}".format(
+        total_sum, datetime.now() - start_time))
 
     return total_sum, sum_img
 
@@ -220,10 +232,10 @@ def segment_worms(well, well_array, input, output, work):
     outpath = dir.joinpath(well, 'img')
 
     sobel_png = dir.joinpath(outpath, name + "_" + well + '_edge' + ".png")
-    imageio.imwrite(sobel_png, sobel)
+    imageio.imwrite(sobel_png, sobel.astype('uint8'))
 
     blur_png = dir.joinpath(outpath, name + "_" + well + '_blur' + ".png")
-    imageio.imwrite(blur_png, blur)
+    imageio.imwrite(blur_png, blur.astype('uint8'))
 
     bin_png = dir.joinpath(outpath, name + "_" + well + '_binary' + ".png")
     imageio.imwrite(bin_png, binary.astype(int))
@@ -280,11 +292,13 @@ def thumbnails(rows, cols, input, output, work):
             well = path.split('/')[-3]
             image = imageio.imread(path)
             # rescale the imaging without anti-aliasing
-            rescaled = rescale(image, 0.125, anti_aliasing=True)
+            rescaled = rescale(image, 0.125, anti_aliasing=True, clip=False)
             # normalize to 0-255
+            rescaled[0, 0] = 1
             rescaled_norm = cv2.normalize(src=rescaled, dst=None, alpha=0,
                                           beta=255, norm_type=cv2.NORM_MINMAX,
                                           dtype=cv2.CV_8U)
+
             dict[well] = rescaled_norm
         return dict
 
@@ -305,12 +319,13 @@ def thumbnails(rows, cols, input, output, work):
             # row letters can be converted to integers with ord() and subtracting a constant
             row = int(ord(well[:1]) - 64)
             col = int(well[1:].strip())
-            new_im.paste(Image.fromarray(thumb), ((col - 1) * 256, (row - 1) * 256))
+            new_im.paste(Image.fromarray(thumb),
+                         ((col - 1) * 256, (row - 1) * 256))
 
         if type == 'flow':
             # apply a colormap if it's a flow image
             new_im = np.asarray(new_im) / 255
-            new_im = Image.fromarray(np.uint8(cm.inferno(new_im)*255))
+            new_im = Image.fromarray(np.uint8(cm.inferno(new_im) * 255))
 
         dir = Path.home().joinpath(output)
         dir.joinpath('thumbs').mkdir(parents=True, exist_ok=True)
@@ -366,7 +381,6 @@ if __name__ == "__main__":
     # create a list of all the possible wells in the plate
     plate = create_plate(plate_format)
 
-    # re-organize the input TIFFs so that each well has its own array
     vid_dict = organize_arrays(
         args.input_directory,
         args.output_directory,
