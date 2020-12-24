@@ -8,10 +8,10 @@ import glob
 from pathlib import Path
 import imageio
 from PIL import Image
-from matplotlib import cm
 from skimage.filters import threshold_otsu
 from skimage.transform import rescale
 from skimage import filters
+from matplotlib import cm
 from scipy import ndimage
 from datetime import datetime
 
@@ -28,7 +28,7 @@ def create_plate(plate):
         columns = [str(column).zfill(2) for column in columns]
         wells = list(itertools.product(rows, columns))
         wells = [''.join(well) for well in wells]
-    print(wells)
+    # print(wells)
 
     return wells
 
@@ -53,8 +53,6 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                                 str(frame), name + "_" + well + ".TIF")
             well_paths.append(path)
 
-        counter = 0
-
         # read the TIFFs at the end of each path into a np array; perform
         # various operations on the array
         try:
@@ -71,6 +69,7 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
 
             # initialize an empty array with the correct shape of the final array
             well_array = np.zeros((frames, height, width))
+            counter = 0
 
             # read images from well_paths
             print("Reading images for well {}".format(well))
@@ -159,8 +158,7 @@ def dense_flow(well, well_array, input, output, work):
             flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3,
                                                 15, 3, 5, 1.2, 0)
 
-            # mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-            mag = np.sqrt(np.square(flow[..., 0]) + np.square(flow[..., 1]))
+            mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
 
             frame1 = frame2
 
@@ -176,21 +174,15 @@ def dense_flow(well, well_array, input, output, work):
     total_sum = np.sum(sum_img)
 
     # write out the dx flow image
-    if np.amax(sum_img) < 255:
-        sum_img[0, 0] = 255
-    elif np.amax(sum_img) > 255:
-        sum_img[sum_img > 255] = 255
-    # apply a colomap
-    sum_img = sum_img / 255
-    im = Image.fromarray(np.uint8(cm.inferno(sum_img)*255))
-
     dir = Path.home().joinpath(work)
     plate_name = Path.home().joinpath(input)
     plate_name = plate_name.name.split("_")[0]
     dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
     outpath = dir.joinpath(well, 'img', plate_name + "_" + well + '_flow' + ".png")
+
+    # write to png
     print(str(outpath))
-    imageio.imwrite(str(outpath), im)
+    imageio.imwrite(str(outpath), sum_img)
 
     print("Optical flow anlaysis completed. Analysis took {}".format(
         datetime.now() - start_time))
@@ -282,6 +274,7 @@ def thumbnails(rows, cols, input, output, work):
     binary_search = str(dir.joinpath('**/img/*_binary.png'))
     binary_paths = glob.glob(binary_search)
 
+    # rescale images and store them in a dict with well/image
     def create_thumbs(paths, dict):
         for path in paths:
             well = path.split('/')[-3]
@@ -295,6 +288,7 @@ def thumbnails(rows, cols, input, output, work):
             dict[well] = rescaled_norm
         return dict
 
+    # generate thumbnails for all dx images
     orig_thumbs = create_thumbs(orig_paths, orig_thumbs)
     flow_thumbs = create_thumbs(flow_paths, flow_thumbs)
     binary_thumbs = create_thumbs(binary_paths, binary_thumbs)
@@ -303,6 +297,7 @@ def thumbnails(rows, cols, input, output, work):
     height = rows * 256
     width = cols * 256
 
+    # stitch the thumbnails together with the proper plate dimensions and save
     def create_plate_thumbnail(thumbs, type):
         new_im = Image.new('L', (width, height))
 
@@ -311,6 +306,11 @@ def thumbnails(rows, cols, input, output, work):
             row = int(ord(well[:1]) - 64)
             col = int(well[1:].strip())
             new_im.paste(Image.fromarray(thumb), ((col - 1) * 256, (row - 1) * 256))
+
+        if type == 'flow':
+            # apply a colormap if it's a flow image
+            new_im = np.asarray(new_im) / 255
+            new_im = Image.fromarray(np.uint8(cm.inferno(new_im)*255))
 
         dir = Path.home().joinpath(output)
         dir.joinpath('thumbs').mkdir(parents=True, exist_ok=True)
