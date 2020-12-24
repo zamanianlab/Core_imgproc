@@ -76,6 +76,9 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
             print("Reading images for well {}".format(well))
             for frame in well_paths:
                 image = Image.open(str(frame))
+                # try asarray() here to avoid copying the array, and don't use
+                # 'matrix' as the variable name (for obvious reasons)
+                # also check the dtype of this array
                 matrix = np.array(image)
                 well_array[counter] = matrix
 
@@ -144,24 +147,20 @@ def dense_flow(well, well_array, input, output, work):
     start_time = datetime.now()
     print("Starting optical flow analysis on {}.".format(well))
 
-    array = well_array
-
-    length, width, height = array.shape
+    length, width, height = well_array.shape
 
     # initialize emtpy array of video length minus one (the length of the dense flow output)
     all_mag = np.zeros((length - 1, height, width))
     count = 0
-    frame1 = array[count]
+    frame1 = well_array[count]
 
     while(1):
         if count < length - 1:
-            frame1 = array[count].astype('uint16')
-            frame2 = array[count + 1].astype('uint16')
+            frame1 = well_array[count].astype('uint16')
+            frame2 = well_array[count + 1].astype('uint16')
 
             flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3,
                                                 30, 3, 5, 1.1, 0)
-
-            # mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
             mag = np.sqrt(np.square(flow[..., 0]) + np.square(flow[..., 1]))
 
             frame1 = frame2
@@ -195,6 +194,8 @@ def dense_flow(well, well_array, input, output, work):
     elif pixel_max > 255:
         print("Max flow is {}. Rescaling".format(pixel_max))
         sum_img[sum_img > 255] = 255
+    else:
+        print("Something went wrong.")
     sum_blur = ndimage.filters.gaussian_filter(sum_img, 1.5)
     imageio.imwrite(str(outpath), sum_blur.astype('uint8'))
 
@@ -287,14 +288,15 @@ def thumbnails(rows, cols, input, output, work):
     binary_paths = glob.glob(binary_search)
 
     # rescale images and store them in a dict with well/image
-    def create_thumbs(paths, dict):
+    def create_thumbs(paths, dict, type):
         for path in paths:
             well = path.split('/')[-3]
             image = imageio.imread(path)
             # rescale the imaging without anti-aliasing
             rescaled = rescale(image, 0.125, anti_aliasing=True, clip=False)
             # normalize to 0-255
-            rescaled[0, 0] = 1
+            if type == 'flow':
+                rescaled[0, 0] = 1
             rescaled_norm = cv2.normalize(src=rescaled, dst=None, alpha=0,
                                           beta=255, norm_type=cv2.NORM_MINMAX,
                                           dtype=cv2.CV_8U)
@@ -303,9 +305,9 @@ def thumbnails(rows, cols, input, output, work):
         return dict
 
     # generate thumbnails for all dx images
-    orig_thumbs = create_thumbs(orig_paths, orig_thumbs)
-    flow_thumbs = create_thumbs(flow_paths, flow_thumbs)
-    binary_thumbs = create_thumbs(binary_paths, binary_thumbs)
+    orig_thumbs = create_thumbs(orig_paths, orig_thumbs, 'orig')
+    flow_thumbs = create_thumbs(flow_paths, flow_thumbs, 'flow')
+    binary_thumbs = create_thumbs(binary_paths, binary_thumbs, 'binary')
 
     # 0.125 of the 4X ImageXpress image is 256 x 256 pixels
     height = rows * 256
