@@ -4,10 +4,10 @@ setwd('~/Desktop/temp_root/')
 
 args = commandArgs(trailingOnly = TRUE)
 
-# plate <- args[1]
-plate <- '20201118-p01-MZ_172'
-metadata_dir <- stringr::str_c('input', plate, sep = '/')
-output_dir <- stringr::str_c('output', plate, sep = '/')
+plate <- args[1]
+# plate <- '20201118-p01-MZ_172'
+metadata_dir <- stringr::str_c('input/', plate)
+output_dir <- stringr::str_c('output/', plate)
 
 # get the paths to all the metadata files
 metadata_files <- dplyr::tibble(base = metadata_dir, 
@@ -17,7 +17,7 @@ metadata_files <- dplyr::tibble(base = metadata_dir,
                                                   recursive = TRUE)) %>%
   dplyr::mutate(path = stringr::str_c(base, category, sep = '/'),
                 assay_date = stringr::str_extract(plate, "20[0-9]{6}"),
-                category = stringr::str_remove(category, '.csv')) %>%
+                category = stringr::str_remove(category, '.csv') %>% stringr::str_remove(., 'metadata/')) %>%
   dplyr::select(path, assay_date, plate, category)
 
 
@@ -46,5 +46,11 @@ metadata <- metadata_files %>%
 
 output_df <- readr::read_csv(stringr::str_c(output_dir, 
                                             stringr::str_c(plate, '_data.csv', sep = ''),
-                                            sep = '/'))
+                                            sep = '/'),
+                             col_names = c('well', 'optical_flow', 'worm_area'))
                              
+final_df <- dplyr::left_join(metadata, output_df) %>% 
+  dplyr::mutate(normalized_flow = optical_flow / worm_area) %>% 
+  readr::write_csv(path = stringr::str_c(output_dir, '/', plate, '_tidy.csv'))
+
+                   
