@@ -6,7 +6,6 @@ import numpy as np
 import csv
 import glob
 from pathlib import Path
-import imageio
 from PIL import Image
 from skimage.filters import threshold_otsu
 from skimage.transform import rescale
@@ -40,6 +39,7 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
     '''
 
     for well in plate:
+        well_counter = 0
         print("Getting the paths for well {}".format(well))
 
         # initialize a list that will contain paths to each frame
@@ -47,53 +47,50 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
 
         # append the path pointing to each frame from each well
         for frame in range(1, frames + 1):
-            dir = Path.home().joinpath(input)
-            name = dir.name.split("_")[0]
-            path = dir.joinpath(str(dir), "TimePoint_" +
-                                str(frame), name + "_" + well + ".TIF")
-            well_paths.append(path)
-
+            data_dir = Path.home().joinpath(input)
+            plate_name = data_dir.parts[-2]
+            plate_name = plate_name.split('_')[0]
+            frame_path = data_dir.joinpath("TimePoint_" + str(frame),
+                                           plate_name + "_" + well + ".TIF")
+            well_paths.append(frame_path)
         # read the TIFFs at the end of each path into a np array; perform
         # various operations on the array
-        try:
-            # get the dimensions of the images and write the first frame for dx
-            first_frame = Image.open(str(well_paths[0]))
-            dir = Path.home().joinpath(work)
-            plate_name = Path.home().joinpath(input)
-            plate_name = plate_name.name.split("_")[0]
-            dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
-            outpath = dir.joinpath(
+
+        # get the dimensions of the images and write the first frame for dx
+        # the TIF files are 16-bit images
+        first_frame = cv2.imread(str(well_paths[0]), cv2.IMREAD_ANYDEPTH)
+        if first_frame is None:
+            print("Well {} not found. Moving to next well.".format(well))
+            well_counter += 1
+        else:
+            work_dir = Path.home().joinpath(work)
+            plate_name = work_dir.parts[-1]
+            work_dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
+            outpath = work_dir.joinpath(
                 well, 'img', plate_name + "_" + well + '_orig' + ".png")
-            imageio.imwrite(str(outpath), first_frame)
+            cv2.imwrite(str(outpath), first_frame)
 
-            height, width = np.array(first_frame).shape
-
-            # initialize an empty array with the correct shape of the final array
+            # initialize an array with the correct shape of the final array
+            height, width = first_frame.shape
             well_array = np.zeros((frames, height, width))
-            counter = 0
 
             # read images from well_paths
             print("Reading images for well {}".format(well))
+            timepoint_counter = 0
             for frame in well_paths:
-                image = Image.open(str(frame))
-                # try asarray() here to avoid copying the array, and don't use
-                # 'matrix' as the variable name (for obvious reasons)
-                # also check the dtype of this array
-                matrix = np.array(image)
-                well_array[counter] = matrix
+                print("Reading Timepoint_{}".format(timepoint_counter + 1))
+                image = cv2.imread(str(frame), cv2.IMREAD_ANYDEPTH)
+                well_array[timepoint_counter] = image
 
                 if reorganize:
-                    counter_str = str(counter).zfill(2)
-                    dir = Path.home().joinpath(work)
-                    plate_name = Path.home().joinpath(input)
-                    plate_name = plate_name.name.split("_")[0]
-                    dir.joinpath(well, 'vid').mkdir(
+                    timepoint = str(timepoint_counter + 1).zfill(2)
+                    work_dir.joinpath(well, 'vid').mkdir(
                         parents=True, exist_ok=True)
-                    outpath = dir.joinpath(
-                        well, 'vid', plate_name + "_" + well + "_" + counter_str + ".tiff")
-                    cv2.imwrite(str(outpath), matrix)
-
-                counter += 1
+                    outpath = work_dir.joinpath(
+                        well, 'vid',
+                        plate_name + "_" + well + "_" + timepoint + ".tiff")
+                    cv2.imwrite(str(outpath), image)
+                timepoint_counter += 1
 
             # run flow on the well
             total_sum, sum_img = dense_flow(
@@ -119,6 +116,8 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 input,
                 output)
 
+            well_counter += 1
+
             # add to the dict with the well as the key and the array as the value
             # vid_dict[well] = well_array
 
@@ -129,10 +128,6 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
             # for frame in well_array:
             #     frame = frame.astype('uint8')
             #     out.write(frame)
-
-        except FileNotFoundError:
-            print("Well {} not found. Moving to next well.".format(well))
-            counter += 1
 
     # return vid_dict
 
@@ -177,16 +172,16 @@ def dense_flow(well, well_array, input, output, work):
     total_sum = np.sum(sum_img)
 
     # write out the dx flow image
-    dir = Path.home().joinpath(work)
-    plate_name = Path.home().joinpath(input)
-    plate_name = plate_name.name.split("_")[0]
-    dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
-    outpath = dir.joinpath(well, 'img', plate_name +
-                           "_" + well + '_flow' + ".png")
+    work_dir = Path.home().joinpath(work)
+    plate_name = work_dir.parts[-1]
+    work_dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
+    outpath = work_dir.joinpath(well, 'img',
+                                plate_name + "_" + well + '_flow' + ".png")
 
     # write to png
     # if there is not a single saturated pixel (low flow), set one to 255 in order to prevent rescaling
     pixel_max = np.amax(sum_img)
+
     if pixel_max < 255:
         print("Max flow is {}. Rescaling".format(pixel_max))
         sum_img[0, 0] = 255
@@ -196,8 +191,9 @@ def dense_flow(well, well_array, input, output, work):
         sum_img[sum_img > 255] = 255
     else:
         print("Something went wrong.")
+
     sum_blur = ndimage.filters.gaussian_filter(sum_img, 1.5)
-    imageio.imwrite(str(outpath), sum_blur.astype('uint8'))
+    cv2.imwrite(str(outpath), sum_blur.astype('uint8'))
 
     print("Optical flow = {0}. Analysis took {1}".format(
         total_sum, datetime.now() - start_time))
@@ -227,26 +223,28 @@ def segment_worms(well, well_array, input, output, work):
     threshold = threshold_otsu(blur)
     binary = blur > threshold
 
-    dir = Path.home().joinpath(work)
-    name = Path.home().joinpath(input)
-    name = name.name.split("_")[0]
-    outpath = dir.joinpath(well, 'img')
+    work_dir = Path.home().joinpath(work)
+    plate_name = work_dir.parts[-1]
+    outpath = work_dir.joinpath(well, 'img')
 
-    sobel_png = dir.joinpath(outpath, name + "_" + well + '_edge' + ".png")
-    imageio.imwrite(sobel_png, sobel.astype('uint8'))
+    sobel_png = work_dir.joinpath(outpath,
+                                  plate_name + "_" + well + '_edge' + ".png")
+    cv2.imwrite(str(sobel_png), sobel.astype('uint8'))
 
-    blur_png = dir.joinpath(outpath, name + "_" + well + '_blur' + ".png")
-    imageio.imwrite(blur_png, blur.astype('uint8'))
+    blur_png = work_dir.joinpath(outpath,
+                                 plate_name + "_" + well + '_blur' + ".png")
+    cv2.imwrite(str(blur_png), blur.astype('uint8'))
 
-    bin_png = dir.joinpath(outpath, name + "_" + well + '_binary' + ".png")
-    imageio.imwrite(bin_png, binary.astype(int))
+    bin_png = work_dir.joinpath(outpath,
+                                plate_name + "_" + well + '_binary' + ".png")
+    cv2.imwrite(str(bin_png), binary * 255)
 
     print("Calculating normalization factor.")
 
     # the area is the sum of all the white pixels (1.0)
     area = np.sum(binary)
-    print("Normalization factor calculation completed. Calculation took {} \
-          seconds.".format(datetime.now() - start_time))
+    print("Normalization factor calculation completed. Calculation took {}".
+          format(datetime.now() - start_time))
 
     return area, sobel, blur, binary
 
@@ -256,12 +254,11 @@ def wrap_up(well, motility, normalization_factor, input, output):
     Takes dictionaries of values and writes them to a CSV.
     '''
 
-    dir = Path.home().joinpath(output)
-    name = Path.home().joinpath(input)
-    name = name.name.split("_")[0]
-    outfile = dir.joinpath(name + '_data' + ".csv")
+    out_dir = Path.home().joinpath(output)
+    plate_name = out_dir.parts[-1]
+    outpath = out_dir.joinpath(plate_name + '_data' + ".csv")
 
-    with open(str(outfile), 'a') as of:
+    with open(str(outpath), 'a') as of:
         writer = csv.writer(of, delimiter=',')
         writer.writerow([well, motility, normalization_factor])
 
@@ -272,27 +269,26 @@ def thumbnails(rows, cols, input, output, work):
     into the structure of the plate.
     '''
 
+    print("Generating diagnostic thumbnails.")
     # get the paths to all the dx images
-    dir = Path.home().joinpath(work)
+    work_dir = Path.home().joinpath(work)
 
-    orig_thumbs = {}
-    orig_search = str(dir.joinpath('**/img/*_orig.png'))
+    orig_search = str(work_dir.joinpath('**/img/*_orig.png'))
     orig_paths = glob.glob(orig_search)
 
-    flow_thumbs = {}
-    flow_search = str(dir.joinpath('**/img/*_flow.png'))
+    flow_search = str(work_dir.joinpath('**/img/*_flow.png'))
     flow_paths = glob.glob(flow_search)
 
-    binary_thumbs = {}
-    binary_search = str(dir.joinpath('**/img/*_binary.png'))
+    binary_search = str(work_dir.joinpath('**/img/*_binary.png'))
     binary_paths = glob.glob(binary_search)
 
     # rescale images and store them in a dict with well/image
-    def create_thumbs(paths, dict, type):
+    def create_thumbs(paths, type):
+        thumb_dict = {}
         for path in paths:
             well = path.split('/')[-3]
-            image = imageio.imread(path)
-            # rescale the imaging without anti-aliasing
+            image = cv2.imread(str(path), cv2.IMREAD_ANYDEPTH)
+            # rescale the image with anti-aliasing
             rescaled = rescale(image, 0.125, anti_aliasing=True, clip=False)
             # normalize to 0-255
             if type == 'flow':
@@ -301,13 +297,17 @@ def thumbnails(rows, cols, input, output, work):
                                           beta=255, norm_type=cv2.NORM_MINMAX,
                                           dtype=cv2.CV_8U)
 
-            dict[well] = rescaled_norm
-        return dict
+            thumb_dict[well] = rescaled_norm
+        return thumb_dict
 
     # generate thumbnails for all dx images
-    orig_thumbs = create_thumbs(orig_paths, orig_thumbs, 'orig')
-    flow_thumbs = create_thumbs(flow_paths, flow_thumbs, 'flow')
-    binary_thumbs = create_thumbs(binary_paths, binary_thumbs, 'binary')
+    # returns a dict with well[thumb]
+    print("Creating OG thumbnails.")
+    orig_thumbs = create_thumbs(orig_paths, 'orig')
+    print("Creating colorized flow thumbnails.")
+    flow_thumbs = create_thumbs(flow_paths, 'flow')
+    print("Creating segmented thumbnails.")
+    binary_thumbs = create_thumbs(binary_paths, 'binary')
 
     # 0.125 of the 4X ImageXpress image is 256 x 256 pixels
     height = rows * 256
@@ -318,7 +318,8 @@ def thumbnails(rows, cols, input, output, work):
         new_im = Image.new('L', (width, height))
 
         for well, thumb in thumbs.items():
-            # row letters can be converted to integers with ord() and subtracting a constant
+            # row letters can be converted to integers with ord()
+            # and then rescaled by subtracting a constant
             row = int(ord(well[:1]) - 64)
             col = int(well[1:].strip())
             new_im.paste(Image.fromarray(thumb),
@@ -329,11 +330,10 @@ def thumbnails(rows, cols, input, output, work):
             new_im = np.asarray(new_im) / 255
             new_im = Image.fromarray(np.uint8(cm.inferno(new_im) * 255))
 
-        dir = Path.home().joinpath(output)
-        dir.joinpath('thumbs').mkdir(parents=True, exist_ok=True)
-        plate_name = Path.home().joinpath(input)
-        plate_name = plate_name.name.split("_")[0]
-        outfile = dir.joinpath('thumbs', plate_name + '_' + type + ".png")
+        out_dir = Path.home().joinpath(output)
+        out_dir.joinpath('thumbs').mkdir(parents=True, exist_ok=True)
+        plate_name = out_dir.parts[-1]
+        outfile = out_dir.joinpath('thumbs', plate_name + '_' + type + ".png")
 
         new_im.save(outfile)
 
