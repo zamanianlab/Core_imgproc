@@ -19,7 +19,7 @@ def create_plate(plate):
     '''
     Create a list with all the well names for a given plate format.
     '''
-    # create a list of the possible well names
+    # create a list of the possible well names (add for all plate formats)
     wells = []
     if plate == 96:
         rows = string.ascii_uppercase[:8]
