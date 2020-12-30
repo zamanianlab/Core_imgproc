@@ -48,16 +48,16 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
         # append the path pointing to each frame from each well
         for frame in range(1, frames + 1):
             data_dir = Path.home().joinpath(input)
-            plate_name = data_dir.parts[-2]
+            plate_name = data_dir.parts[-1]
             plate_name = plate_name.split('_')[0]
             frame_path = data_dir.joinpath("TimePoint_" + str(frame),
                                            plate_name + "_" + well + ".TIF")
             well_paths.append(frame_path)
+
         # read the TIFFs at the end of each path into a np array; perform
         # various operations on the array
 
-        # get the dimensions of the images and write the first frame for dx
-        # the TIF files are 16-bit images
+        # write the first frame for dx; the TIF files are 16-bit images
         first_frame = cv2.imread(str(well_paths[0]), cv2.IMREAD_ANYDEPTH)
         if first_frame is None:
             print("Well {} not found. Moving to next well.".format(well))
@@ -65,6 +65,7 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
         else:
             work_dir = Path.home().joinpath(work)
             plate_name = work_dir.parts[-1]
+            plate_name = plate_name.split('_')[0]
             work_dir.joinpath(well, 'img').mkdir(parents=True, exist_ok=True)
             outpath = work_dir.joinpath(
                 well, 'img', plate_name + "_" + well + '_orig' + ".png")
