@@ -6,9 +6,10 @@ import numpy as np
 import csv
 import glob
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw
 from skimage.filters import threshold_otsu
 from skimage.transform import rescale
+from skimage.morphology import disk, dilation
 from skimage import filters
 from matplotlib import cm
 from scipy import ndimage
@@ -94,12 +95,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 timepoint_counter += 1
 
             # run flow on the well
-            total_sum, sum_img = dense_flow(
-                well,
-                well_array,
-                input,
-                output,
-                work)
+            # total_sum, sum_img = dense_flow(
+            #     well,
+            #     well_array,
+            #     input,
+            #     output,
+            #     work)
 
             # segment the worms
             normalization_factor, sobel, blur, bin = segment_worms(
@@ -110,12 +111,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # wrap_up
-            wrap_up(
-                well,
-                total_sum,
-                normalization_factor,
-                input,
-                output)
+            # wrap_up(
+            #     well,
+            #     total_sum,
+            #     normalization_factor,
+            #     input,
+            #     output)
 
             well_counter += 1
 
@@ -185,10 +186,12 @@ def dense_flow(well, well_array, input, output, work):
 
     if pixel_max < 255:
         print("Max flow is {}. Rescaling".format(pixel_max))
+        sum_img = sum_img * 0.8
         sum_img[0, 0] = 255
     # if there are saturated pixels (high flow), adjust everything > 255 to prevent rescaling
     elif pixel_max > 255:
         print("Max flow is {}. Rescaling".format(pixel_max))
+        sum_img = sum_img * 0.8
         sum_img[sum_img > 255] = 255
     else:
         print("Something went wrong.")
@@ -224,6 +227,39 @@ def segment_worms(well, well_array, input, output, work):
     threshold = threshold_otsu(blur)
     binary = blur > threshold
 
+    # create a disk mask for 2X images
+    def create_circular_mask(h, w, center=None, radius=None):
+        if center is None:  # make the center the center of the image
+            center = (int(w/2), int(h/2))
+        if radius is None:  # make the radius the size of the image
+            radius = min(center[0], center[1], w-center[0], h-center[1])
+
+        Y, X = np.ogrid[:h, :w]
+        dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
+
+        mask = dist_from_center <= radius
+        return mask
+
+    mask = create_circular_mask(2048, 2048, radius=975)
+
+    # mask the binary image
+    binary = binary * mask
+
+    # dilate, fill holes, and size filter
+    selem = disk(6)
+    dilated = dilation(binary, selem)
+    filled = ndimage.binary_fill_holes(dilated).astype('uint8')
+    nb_components, labelled_image, stats, centroids = cv2.connectedComponentsWithStats(filled, connectivity=8)
+    sizes = stats[1:, -1]
+    nb_components = nb_components - 1
+    # empirically derived minimum size
+    min_size = 25000
+
+    filtered = np.zeros((labelled_image.shape))
+    for i in range(0, nb_components):
+        if sizes[i] >= min_size:
+            filtered[labelled_image == i + 1] = 255
+
     work_dir = Path.home().joinpath(work)
     plate_name = work_dir.parts[-1]
     outpath = work_dir.joinpath(well, 'img')
@@ -239,6 +275,14 @@ def segment_worms(well, well_array, input, output, work):
     bin_png = work_dir.joinpath(outpath,
                                 plate_name + "_" + well + '_binary' + ".png")
     cv2.imwrite(str(bin_png), binary * 255)
+
+    fill_png = work_dir.joinpath(outpath,
+                                 plate_name + "_" + well + '_filled' + ".png")
+    cv2.imwrite(str(fill_png), filled * 255)
+
+    filtered_png = work_dir.joinpath(outpath,
+                                     plate_name + "_" + well + '_filtered' + ".png")
+    cv2.imwrite(str(filtered_png), filtered * 255)
 
     print("Calculating normalization factor.")
 
@@ -280,7 +324,7 @@ def thumbnails(rows, cols, input, output, work):
     flow_search = str(work_dir.joinpath('**/img/*_flow.png'))
     flow_paths = glob.glob(flow_search)
 
-    binary_search = str(work_dir.joinpath('**/img/*_binary.png'))
+    binary_search = str(work_dir.joinpath('**/img/*_filtered.png'))
     binary_paths = glob.glob(binary_search)
 
     # rescale images and store them in a dict with well/image
@@ -297,7 +341,6 @@ def thumbnails(rows, cols, input, output, work):
             rescaled_norm = cv2.normalize(src=rescaled, dst=None, alpha=0,
                                           beta=255, norm_type=cv2.NORM_MINMAX,
                                           dtype=cv2.CV_8U)
-
             thumb_dict[well] = rescaled_norm
         return thumb_dict
 
@@ -308,7 +351,7 @@ def thumbnails(rows, cols, input, output, work):
     print("Creating colorized flow thumbnails.")
     flow_thumbs = create_thumbs(flow_paths, 'flow')
     print("Creating segmented thumbnails.")
-    binary_thumbs = create_thumbs(binary_paths, 'binary')
+    binary_thumbs = create_thumbs(binary_paths, 'filtered')
 
     # 0.125 of the 4X ImageXpress image is 256 x 256 pixels
     height = rows * 256
@@ -316,6 +359,7 @@ def thumbnails(rows, cols, input, output, work):
 
     # stitch the thumbnails together with the proper plate dimensions and save
     def create_plate_thumbnail(thumbs, type):
+        # new blank image with gridlines
         new_im = Image.new('L', (width, height))
 
         for well, thumb in thumbs.items():
@@ -330,6 +374,17 @@ def thumbnails(rows, cols, input, output, work):
             # apply a colormap if it's a flow image
             new_im = np.asarray(new_im) / 255
             new_im = Image.fromarray(np.uint8(cm.inferno(new_im) * 255))
+            draw = ImageDraw.Draw(new_im)
+            for col_line in range(256, width, 256):
+                draw.line((col_line, 0, col_line, height), fill=255, width=10)
+            for row_line in range(256, height, 256):
+                draw.line((0, row_line, width, row_line), fill=255, width=10)
+        else:
+            draw = ImageDraw.Draw(new_im)
+            for col_line in range(256, width, 256):
+                draw.line((col_line, 0, col_line, height), fill=64, width=10)
+            for row_line in range(256, height, 256):
+                draw.line((0, row_line, width, row_line), fill=64, width=10)
 
         out_dir = Path.home().joinpath(output)
         out_dir.joinpath('thumbs').mkdir(parents=True, exist_ok=True)
@@ -384,15 +439,15 @@ if __name__ == "__main__":
     # create a list of all the possible wells in the plate
     plate = create_plate(plate_format)
 
-    vid_dict = organize_arrays(
-        args.input_directory,
-        args.output_directory,
-        args.work_directory,
-        plate,
-        args.time_points,
-        args.rows,
-        args.columns,
-        args.reorganize)
+    # vid_dict = organize_arrays(
+    #     args.input_directory,
+    #     args.output_directory,
+    #     args.work_directory,
+    #     plate,
+    #     args.time_points,
+    #     args.rows,
+    #     args.columns,
+    #     args.reorganize)
 
     thumbnails(
         args.rows,
