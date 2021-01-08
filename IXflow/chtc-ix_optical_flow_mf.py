@@ -95,12 +95,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 timepoint_counter += 1
 
             # run flow on the well
-            # total_sum, sum_img = dense_flow(
-            #     well,
-            #     well_array,
-            #     input,
-            #     output,
-            #     work)
+            total_sum, sum_img = dense_flow(
+                well,
+                well_array,
+                input,
+                output,
+                work)
 
             # segment the worms
             normalization_factor, sobel, blur, bin = segment_worms(
@@ -111,12 +111,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # wrap_up
-            # wrap_up(
-            #     well,
-            #     total_sum,
-            #     normalization_factor,
-            #     input,
-            #     output)
+            wrap_up(
+                well,
+                total_sum,
+                normalization_factor,
+                input,
+                output)
 
             well_counter += 1
 
@@ -227,39 +227,6 @@ def segment_worms(well, well_array, input, output, work):
     threshold = threshold_otsu(blur)
     binary = blur > threshold
 
-    # create a disk mask for 2X images
-    def create_circular_mask(h, w, center=None, radius=None):
-        if center is None:  # make the center the center of the image
-            center = (int(w/2), int(h/2))
-        if radius is None:  # make the radius the size of the image
-            radius = min(center[0], center[1], w-center[0], h-center[1])
-
-        Y, X = np.ogrid[:h, :w]
-        dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
-
-        mask = dist_from_center <= radius
-        return mask
-
-    mask = create_circular_mask(2048, 2048, radius=975)
-
-    # mask the binary image
-    binary = binary * mask
-
-    # dilate, fill holes, and size filter
-    selem = disk(30)
-    dilated = binary_closing(binary, selem)
-    # filled = ndimage.binary_fill_holes(dilated).astype('uint8')
-    nb_components, labelled_image, stats, centroids = cv2.connectedComponentsWithStats(dilated.astype('uint8'), connectivity=8)
-    sizes = stats[1:, -1]
-    nb_components = nb_components - 1
-    # empirically derived minimum size
-    min_size = 25000
-
-    filtered = np.zeros((labelled_image.shape))
-    for i in range(0, nb_components):
-        if sizes[i] >= min_size:
-            filtered[labelled_image == i + 1] = 255
-
     work_dir = Path.home().joinpath(work)
     plate_name = work_dir.parts[-1]
     outpath = work_dir.joinpath(well, 'img')
@@ -275,14 +242,6 @@ def segment_worms(well, well_array, input, output, work):
     bin_png = work_dir.joinpath(outpath,
                                 plate_name + "_" + well + '_binary' + ".png")
     cv2.imwrite(str(bin_png), binary * 255)
-
-    # fill_png = work_dir.joinpath(outpath,
-    #                              plate_name + "_" + well + '_filled' + ".png")
-    # cv2.imwrite(str(fill_png), filled * 255)
-
-    filtered_png = work_dir.joinpath(outpath,
-                                     plate_name + "_" + well + '_filtered' + ".png")
-    cv2.imwrite(str(filtered_png), filtered * 255)
 
     print("Calculating normalization factor.")
 
@@ -324,7 +283,7 @@ def thumbnails(rows, cols, input, output, work):
     flow_search = str(work_dir.joinpath('**/img/*_flow.png'))
     flow_paths = glob.glob(flow_search)
 
-    binary_search = str(work_dir.joinpath('**/img/*_filtered.png'))
+    binary_search = str(work_dir.joinpath('**/img/*_binary.png'))
     binary_paths = glob.glob(binary_search)
 
     # rescale images and store them in a dict with well/image

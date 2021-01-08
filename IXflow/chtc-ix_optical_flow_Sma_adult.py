@@ -95,12 +95,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 timepoint_counter += 1
 
             # run flow on the well
-            # total_sum, sum_img = dense_flow(
-            #     well,
-            #     well_array,
-            #     input,
-            #     output,
-            #     work)
+            total_sum, sum_img = dense_flow(
+                well,
+                well_array,
+                input,
+                output,
+                work)
 
             # segment the worms
             normalization_factor, sobel, blur, bin = segment_worms(
@@ -111,12 +111,12 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # wrap_up
-            # wrap_up(
-            #     well,
-            #     total_sum,
-            #     normalization_factor,
-            #     input,
-            #     output)
+            wrap_up(
+                well,
+                total_sum,
+                normalization_factor,
+                input,
+                output)
 
             well_counter += 1
 
