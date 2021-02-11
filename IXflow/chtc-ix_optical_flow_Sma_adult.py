@@ -7,10 +7,12 @@ import csv
 import glob
 from pathlib import Path
 from PIL import Image, ImageDraw
-from skimage.filters import threshold_otsu
+# from skimage.filters import threshold_otsu
 from skimage.transform import rescale
-from skimage.morphology import disk, binary_closing
-from skimage import filters
+# from skimage.morphology import disk, binary_closing
+# from skimage.restoration import rolling_ball
+# from skimage.util import invert
+# from skimage import filters
 from matplotlib import cm
 from scipy import ndimage
 from datetime import datetime
@@ -103,7 +105,7 @@ def organize_arrays(input, output, work, plate, frames, rows, columns, reorganiz
                 work)
 
             # segment the worms
-            normalization_factor, sobel, blur, bin = segment_worms(
+            normalization_factor, bin, filtered = segment_worms(
                 well,
                 well_array,
                 input,
@@ -217,17 +219,7 @@ def segment_worms(well, well_array, input, output, work):
 
     print("Segmenting 5th frame...")
 
-    # sobel edge detection
-    sobel = filters.sobel(array[4])
-
-    # gaussian blur
-    blur = ndimage.filters.gaussian_filter(sobel, 1.5)
-
-    # set threshold, make binary
-    threshold = threshold_otsu(blur)
-    binary = blur > threshold
-
-    # create a disk mask for 2X images
+# create a disk mask for 2X images
     def create_circular_mask(h, w, center=None, radius=None):
         if center is None:  # make the center the center of the image
             center = (int(w/2), int(h/2))
@@ -240,20 +232,28 @@ def segment_worms(well, well_array, input, output, work):
         mask = dist_from_center <= radius
         return mask
 
-    mask = create_circular_mask(2048, 2048, radius=975)
+    # mask image and subtract background
+    fifth = array[4]
 
-    # mask the binary image
+    height, width = fifth.shape
+    mask = create_circular_mask(height, width, radius=height / 2.1)
+
+    # gaussian blur
+    blur = ndimage.filters.gaussian_filter(fifth, 1.5)
+
+    # set threshold, make binary
+    # threshold = threshold_otsu(subtracted)
+    threshold = np.percentile(blur, 1.5)
+    binary = blur < threshold
     binary = binary * mask
+    binary = ndimage.binary_closing(binary, iterations=5)
 
-    # dilate, fill holes, and size filter
-    selem = disk(30)
-    dilated = binary_closing(binary, selem)
-    # filled = ndimage.binary_fill_holes(dilated).astype('uint8')
-    nb_components, labelled_image, stats, centroids = cv2.connectedComponentsWithStats(dilated.astype('uint8'), connectivity=8)
+    nb_components, labelled_image, stats, centroids = cv2.connectedComponentsWithStats(binary.astype('uint8'), connectivity=8)
     sizes = stats[1:, -1]
     nb_components = nb_components - 1
+
     # empirically derived minimum size
-    min_size = 25000
+    min_size = 20000
 
     filtered = np.zeros((labelled_image.shape))
     for i in range(0, nb_components):
@@ -264,34 +264,22 @@ def segment_worms(well, well_array, input, output, work):
     plate_name = work_dir.parts[-1]
     outpath = work_dir.joinpath(well, 'img')
 
-    sobel_png = work_dir.joinpath(outpath,
-                                  plate_name + "_" + well + '_edge' + ".png")
-    cv2.imwrite(str(sobel_png), sobel.astype('uint8'))
-
-    blur_png = work_dir.joinpath(outpath,
-                                 plate_name + "_" + well + '_blur' + ".png")
-    cv2.imwrite(str(blur_png), blur.astype('uint8'))
+    filtered_png = work_dir.joinpath(outpath,
+                                     plate_name + "_" + well + '_filtered' + ".png")
+    cv2.imwrite(str(filtered_png), filtered)
 
     bin_png = work_dir.joinpath(outpath,
                                 plate_name + "_" + well + '_binary' + ".png")
     cv2.imwrite(str(bin_png), binary * 255)
 
-    # fill_png = work_dir.joinpath(outpath,
-    #                              plate_name + "_" + well + '_filled' + ".png")
-    # cv2.imwrite(str(fill_png), filled * 255)
-
-    filtered_png = work_dir.joinpath(outpath,
-                                     plate_name + "_" + well + '_filtered' + ".png")
-    cv2.imwrite(str(filtered_png), filtered * 255)
-
     print("Calculating normalization factor.")
 
     # the area is the sum of all the white pixels (1.0)
-    area = np.sum(binary)
+    area = np.sum(filtered)
     print("Normalization factor calculation completed. Calculation took {}".
           format(datetime.now() - start_time))
 
-    return area, sobel, blur, binary
+    return area, binary, filtered
 
 
 def wrap_up(well, motility, normalization_factor, input, output):
@@ -334,7 +322,7 @@ def thumbnails(rows, cols, input, output, work):
             well = path.split('/')[-3]
             image = cv2.imread(str(path), cv2.IMREAD_ANYDEPTH)
             # rescale the image with anti-aliasing
-            rescaled = rescale(image, 0.125, anti_aliasing=True, clip=False)
+            rescaled = rescale(image, 0.25, anti_aliasing=True, clip=False)
             # normalize to 0-255
             if type == 'flow':
                 rescaled[0, 0] = 1
