@@ -253,7 +253,7 @@ def segment_worms(well, well_array, input, output, work):
     nb_components = nb_components - 1
 
     # empirically derived minimum size
-    min_size = 20000
+    min_size = 7500
 
     filtered = np.zeros((labelled_image.shape))
     for i in range(0, nb_components):
