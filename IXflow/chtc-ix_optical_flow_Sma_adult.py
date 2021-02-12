@@ -248,12 +248,13 @@ def segment_worms(well, well_array, input, output, work):
     binary = binary * mask
     binary = ndimage.binary_closing(binary, iterations=5)
 
+    # remove small segmented debris
     nb_components, labelled_image, stats, centroids = cv2.connectedComponentsWithStats(binary.astype('uint8'), connectivity=8)
     sizes = stats[1:, -1]
     nb_components = nb_components - 1
 
     # empirically derived minimum size
-    min_size = 7500
+    min_size = 2500
 
     filtered = np.zeros((labelled_image.shape))
     for i in range(0, nb_components):
