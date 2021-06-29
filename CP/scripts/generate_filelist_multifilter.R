@@ -55,6 +55,6 @@ load_csv <- dplyr::tibble(
   Metadata_Well = stringr::str_extract(FileName_TransmittedLight, '[A-H][0,1]{1}[0-9]{1}')
 )
 
-readr::write_csv(load_csv, file = stringr::str_c('/', getwd(), '/Core_imgproc/', 'CP/' 'metadata/', 'image_paths_multifilter.csv', sep = ''))
+readr::write_csv(load_csv, file = stringr::str_c('/', getwd(), '/Core_imgproc/', 'CP/', 'metadata/', 'image_paths_multifilter.csv', sep = ''))
 
 
