@@ -1,11 +1,11 @@
 library(tidyverse)
 
-# setwd('/Users/njwheeler/Desktop/')
+setwd('/Users/njwheeler/Desktop/')
 
 args = commandArgs(trailingOnly = TRUE)
 
-plate <- args[1]
-# plate <- '20201217-p10-NJW_346'
+# plate <- args[1]
+plate <- '20210614-p01-KJG_670'
 
 image_dir <- stringr::str_c(getwd(), 'Core_imgproc', 'CP', 'projects', plate, 'raw_images', sep = '/')
 
@@ -19,7 +19,7 @@ wd <- getwd() %>% str_remove(., '^/')
 
 load_csv <- dplyr::tibble(
   Group_Number = 1,
-  Group_Index = seq(1, length(input_files) / 2),
+  Group_Index = seq(1, length(tl)),
   URL_GFP = stringr::str_c('file:', wd, 'Core_imgproc', 'CP', 'projects', plate, 'raw_images', gfp, sep = '/'),
   URL_TransmittedLight = stringr::str_c('file:', wd, 'Core_imgproc', 'CP', 'projects', plate, 'raw_images', tl, sep = '/'),
   URL_TxRed = stringr::str_c('file:', wd, 'Core_imgproc', 'CP', 'projects', plate, 'raw_images', txrd, sep = '/'),
