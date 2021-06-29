@@ -1,11 +1,11 @@
 library(tidyverse)
 
-setwd('/Users/njwheeler/Desktop/')
+# setwd('/Users/njwheeler/Desktop/')
 
 args = commandArgs(trailingOnly = TRUE)
 
-# plate <- args[1]
-plate <- '20210614-p01-KJG_670'
+plate <- args[1]
+# plate <- '20210614-p01-KJG_670'
 
 image_dir <- stringr::str_c(getwd(), 'Core_imgproc', 'CP', 'projects', plate, 'raw_images', sep = '/')
 
