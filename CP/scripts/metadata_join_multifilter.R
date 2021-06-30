@@ -21,14 +21,14 @@ metadata_files <- dplyr::tibble(base = metadata_dir,
 
 # function to read and tidy the metadata files
 get_metadata <- function(...) {
-  
+
   df <- tibble(...)
-  
+
   data <- readr::read_csv(df$path, col_names = sprintf("%02d", seq(1:12))) %>%
     dplyr::mutate(row = LETTERS[1:8], .before = `01`) %>%
     tidyr::pivot_longer(cols = `01`:`12`, names_to = 'col', values_to = df$category) %>%
     dplyr::mutate(well = stringr::str_c(row, col), plate = df$plate)
-  
+
 }
 
 collapse_rows <- function(x) {
@@ -37,14 +37,14 @@ collapse_rows <- function(x) {
 }
 
 metadata <- metadata_files %>%
-  purrr::pmap_dfr(get_metadata) %>% 
-  dplyr::select(plate, well, row, col, species, stages, strain, treatment, conc, other) %>%
+  purrr::pmap_dfr(get_metadata) %>%
+  dplyr::select(plate, well, row, col, species, stage, strain, treatment, conc, other) %>%
   dplyr::group_by(plate, well, row, col) %>%
   dplyr::summarise(dplyr::across(species:other, collapse_rows))
 
 output_df <- readr::read_csv(stringr::str_c(output_dir,
                                             stringr::str_remove(plate, '_[0-9]*$') %>% stringr::str_c(., '_straightened_worms.csv'),
-                                            sep = '/')) %>% 
+                                            sep = '/')) %>%
   rename(well = Metadata_Well)
 
 final_df <- dplyr::left_join(metadata, output_df) %>%
