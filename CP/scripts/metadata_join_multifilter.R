@@ -38,7 +38,7 @@ collapse_rows <- function(x) {
 
 metadata <- metadata_files %>%
   purrr::pmap_dfr(get_metadata) %>%
-  dplyr::select(plate, well, row, col, species, stage, strain, treatment, conc, other) %>%
+  dplyr::select(plate, well, row, col, species, stages, strain, treatment, conc, other) %>%
   dplyr::group_by(plate, well, row, col) %>%
   dplyr::summarise(dplyr::across(species:other, collapse_rows))
 
