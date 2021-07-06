@@ -44,7 +44,8 @@ metadata <- metadata_files %>%
 
 output_df <- readr::read_csv(stringr::str_c(output_dir,
                                             stringr::str_remove(plate, '_[0-9]*$') %>% stringr::str_c(., '_straightened_worms.csv'),
-                                            sep = '/')) %>%
+                                            sep = '/'),
+                             skip = 0) %>%
   rename(well = Metadata_Well)
 
 final_df <- dplyr::left_join(metadata, output_df) %>%
